@@ -1,4 +1,5 @@
 import argparse
+import yaml
 import shutil
 import sys
 import subprocess
@@ -8,14 +9,6 @@ from subprocess import check_call, check_output, CalledProcessError
 REPOS_LIST     = ('production', 'staging')
 DISTROS_LIST   = ('centos/8', 'fedora/31', 'ubuntu/19.10', 'debian/10', 'opensuse/15.1', 'all')
 JFROG_BASE     = 'https://kimchi.jfrog.io/kimchi/'
-
-COMMON_PACKAGES = [
-
-    'gcc make autoconf automake git python3-pip python3-requests python3-mock \
-    systemd logrotate python3-psutil python3-ldap python3-lxml python3-websockify \
-    python3-jsonschema openssl nginx python3-configobj python3-lxml python3-magic \
-    python3-paramiko python3-ldap spice-html5 novnc qemu-kvm'
-    ] 
 
 WOK = [
     'git clone https://github.com/kimchi-project/wok.git /var/wok',
@@ -39,29 +32,18 @@ COMMANDS_OS = {
         'update' : 'apt update -y',
         'make' : ['make', 'deb'],
         'pk' : '.deb',
-        'extra' : 'gettext pkgconf xsltproc python3-dev pep8 pyflakes python3-yaml python3-libvirt \
-            python3-parted python3-guestfs python3-pil python3-cherrypy3 libvirt0 libvirt-daemon-system \
-            libvirt-clients nfs-common sosreport open-iscsi libguestfs-tools libnl-route-3-dev',
         'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimchi/requirements-UBUNTU.txt',
         },
     'fedora' : {
         'install' : '',
         'update' : '',
         'make' : "",
-        'extra' : 'gettext-devel rpm-build libxslt gcc-c++ python3-devel python3-pep8 python3-pyflakes \
-            rpmlint python3-pyyaml python3-libvirt python3-pyparted python3-ethtool python3-pillow \
-            python3-cherrypy python3-libguestfs libvirt libvirt-daemon-config-network iscsi-initiator-utils \
-            libguestfs-tools sos nfs-utils',
         'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimch/requirements-FEDORA.txt',
     },
     'opensuse/LEAP' : {
         'install' : '',
         'update' : '',
         'make' : "",
-        'extra': 'gettext-tools rpm-build libxslt-tools gcc-c++ python3-devel python3-pep8 python3-pyflakes \
-            rpmlint python3-PyYAML python3-distro python3-libvirt-python python3-ethtool python3-Pillow \
-            python3-CherryPy python3-ipaddr python3-libguestfs parted-devel libvirt \
-            libvirt-daemon-config-network open-iscsi guestfs-tools nfs-client python3-devel',
         'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimch/requirements-OPENSUSE-LEAP.txt',
     },
 }
@@ -136,9 +118,10 @@ def run_build(list, dir):
         print('An exception has occurred: {0}'.format(e))
         sys.exit(1)
 
-def curl_cmd(distro_name, distro, package_name, user, password, path):
+def curl_cmd(repo, distro_name, distro, package_name, user, password, path):
     '''
     Move package to JFROG repository
+    @param str repo repo 
     @param str distro_name distro name
     @param str distro distro name and version
     @param str package_name package name
@@ -151,13 +134,35 @@ def curl_cmd(distro_name, distro, package_name, user, password, path):
         cmd = 'curl -u%s:%s -XPUT "https://kimchi.jfrog.io/kimchi/%s/%s;deb.distribution=%s; \
             deb.component=kimchi;deb.architecture=noarch" -T %s' \
             % (user, password, distro, package_name, distro, path )
+    elif distro_name == 'staging':
+        cmd = 'curl -u%s:%s -XPUT https://kimchi.jfrog.io/kimchi/staging/%s/ -T %s' % (user, password, distro, path)
     else:
         cmd = 'curl -u%s:%s -XPUT https://kimchi.jfrog.io/kimchi/%s/ -T %s' % (user, password, distro, path)
+
     execute_cmd([cmd], 'Moving package to JFROG')
+
+def install_dependencies(distro, pm):
+
+    '''
+    Install package dependencies
+    @param str distro distro name
+    @param str pm package manager
+    '''
+
+    packages = []
+    with open(r'dependencies.yaml') as file:
+        packages_list = yaml.load(file, Loader=yaml.Loader)
+
+        packages.append(' '.join([str(elem) for elem in packages_list['development-deps']['common']]))
+        packages.append(' '.join([str(elem) for elem in packages_list['development-deps'][distro]]))
+        packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps']['common']]))
+        packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps'][distro]]))
+        
+        for package in packages:
+            execute_cmd([COMMANDS_OS[pm]['install'] + ' ' + package],'Intalling necessary packages')
 
 def main():
    
-
     repo, distros, user, password  = usage()
     #version = get_kimchi_version()
     version =  "3.0.0"
@@ -169,22 +174,20 @@ def main():
             pm = 'debian'
         else:
             pm = distro_name[0]
-
-    '''
+        ''' 
         try:
             shutil.rmtree('/var/wok/')
         except:
             pass
-        
+        '''
+            
         execute_cmd([COMMANDS_OS[pm]['update']], 'Updating system')
-        execute_cmd([COMMANDS_OS[pm]['install'] + ' ' + str(COMMON_PACKAGES[0])],
-            'Intalling necessary basic Packages')
-        execute_cmd([COMMANDS_OS[pm]['install'] + ' ' + COMMANDS_OS[pm]['extra']],
-            'Intalling necessary extra Packages')
+        install_dependencies(distro_name[0], pm)
+        '''
         execute_cmd(PACKAGES['wok'], 'Installing Wok')
         execute_cmd(PACKAGES['kimchi'], 'Installing Kimchi')
-        execute_cmd([COMMANDS_OS[pm]['pip']],'Installin Pip packages') 
-        
+        execute_cmd([COMMANDS_OS[pm]['pip']],'Installing Pip packages') 
+        ''' 
         for item in BUILD:
             
             run_build(item, '/var/wok/')
@@ -192,13 +195,14 @@ def main():
             
         run_build(COMMANDS_OS[pm]['make'], '/var/wok/')
         run_build(COMMANDS_OS[pm]['make'], '/var/wok/src/wok/plugins/kimchi/')
-        '''
-    wok_package    = 'wok-'    + version + '.' + release + '.' + distro_name[0] + '.noarch' + COMMANDS_OS[pm]['pk']
-    kimchi_package = 'kimchi-' + version + '-' + release + '.noarch' + COMMANDS_OS[pm]['pk']
+        
+        wok_package    = 'wok-'    + version + '.' + release + '.' + distro_name[0] + '.noarch' + COMMANDS_OS[pm]['pk']
+        kimchi_package = 'kimchi-' + version + '-' + release + '.noarch' + COMMANDS_OS[pm]['pk']
     
-    #curl_cmd(distro_name[0], distro, wok_package, user, password, '/var/wok/' + wok_package)
-    curl_cmd(distro_name[0], distro, wok_package, user, password, '/var/wok/src/wok/plugins/kimchi/' + kimchi_package)
-    print("All Good, check JFROG")
+        #curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/' + wok_package)
+        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/src/wok/plugins/kimchi/' + kimchi_package)
 
+    print("All Good, check JFROG")
+    
 if __name__ == "__main__":
     main()
