@@ -11,15 +11,16 @@ REPOS_LIST     = ('production', 'staging')
 DISTROS_LIST   = ('centos/8', 'fedora/31', 'ubuntu/19.10', 'debian/10', 'opensuse/15.1', 'all')
 JFROG_BASE     = 'https://kimchi.jfrog.io/kimchi/'
 
+HOMEWOK        = '/tmp/wok/'
+HOMEKIMCHI     = HOMEWOK + 'src/wok/plugins/kimchi/'
+
 WOK = [
-    'git clone https://github.com/kimchi-project/wok.git /var/wok',
-    'sudo -H pip3 install -r /var/wok/requirements-dev.txt',
+    'git clone https://github.com/kimchi-project/wok.git ' + HOMEWOK,
     ] 
 
 KIMCHI = [
-    'mkdir -p /var/wok/src/wok/plugins/kimchi/',
-    'git clone https://github.com/kimchi-project/kimchi.git /var/wok/src/wok/plugins/kimchi/',
-    'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimchi/requirements-dev.txt',
+    'mkdir -p ' + HOMEKIMCHI,
+    'git clone https://github.com/kimchi-project/kimchi.git ' + HOMEKIMCHI ,
     ]
 
 PACKAGES           = {}
@@ -33,19 +34,19 @@ COMMANDS_OS = {
         'update' : 'apt update -y',
         'make' : ['make', 'deb'],
         'pk' : '.deb',
-        'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimchi/requirements-UBUNTU.txt',
+        'pip' : 'sudo -H pip3 install -r ' + HOMEKIMCHI + 'requirements-UBUNTU.txt',
         },
     'fedora' : {
         'install' : '',
         'update' : '',
         'make' : "",
-        'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimch/requirements-FEDORA.txt',
+        'pip' : 'sudo -H pip3 install -r ' + HOMEKIMCHI + 'requirements-FEDORA.txt',
     },
     'opensuse/LEAP' : {
         'install' : '',
         'update' : '',
         'make' : "",
-        'pip' : 'sudo -H pip3 install -r /var/wok/src/wok/plugins/kimch/requirements-OPENSUSE-LEAP.txt',
+        'pip' : 'sudo -H pip3 install -r ' + HOMEKIMCHI + 'requirements-OPENSUSE-LEAP.txt',
     },
 }
 
@@ -151,17 +152,21 @@ def install_dependencies(distro, pm):
     '''
 
     packages = []
-    with open(r'dependencies.yaml') as file:
-        packages_list = yaml.load(file, Loader=yaml.Loader)
+    for file in (HOMEWOK + 'dependencies.yaml', HOMEKIMCHI + 'dependencies.yaml' ):
+        with open(file, 'r') as file:
+            packages_list = yaml.load(file, Loader=yaml.Loader)
 
-        packages.append(' '.join([str(elem) for elem in packages_list['development-deps']['common']]))
-        packages.append(' '.join([str(elem) for elem in packages_list['development-deps'][distro]]))
-        packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps']['common']]))
-        packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps'][distro]]))
+            packages.append(' '.join([str(elem) for elem in packages_list['development-deps']['common']]))
+            packages.append(' '.join([str(elem) for elem in packages_list['development-deps'][distro]]))
+            packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps']['common']]))
+            packages.append(' '.join([str(elem) for elem in packages_list['runtime-deps'][distro]]))
         
-        for package in packages:
-            execute_cmd([COMMANDS_OS[pm]['install'] + ' ' + package],'Intalling necessary packages')
-
+            for package in packages:
+                execute_cmd([COMMANDS_OS[pm]['install'] + ' ' + package], 'Installing necessary packages')
+    
+    execute_cmd(['sudo -H pip3 install -r ' + HOMEWOK+ 'requirements-dev.txt'], 'Installing requirements')
+    execute_cmd(['sudo -H pip3 install -r ' + HOMEWOKKIMCHI+ 'requirements-dev.txt'], 'Installing requirements')
+    
 def main():
    
     repo, distros, user, password  = usage()
@@ -174,33 +179,31 @@ def main():
             pm = 'debian'
         else:
             pm = distro_name[0]
-        ''' 
+         
         try:
-            shutil.rmtree('/var/wok/')
+            shutil.rmtree(HOMEWOK)
         except:
             pass
-        '''
             
         execute_cmd([COMMANDS_OS[pm]['update']], 'Updating system')
+        execute_cmd(PACKAGES['wok'], 'Cloning Wok')
+        execute_cmd(PACKAGES['kimchi'], 'Cloning Kimchi')
         install_dependencies(distro_name[0], pm)
-    
-        execute_cmd(PACKAGES['wok'], 'Installing Wok')
-        execute_cmd(PACKAGES['kimchi'], 'Installing Kimchi')
         execute_cmd([COMMANDS_OS[pm]['pip']],'Installing Pip packages') 
         
         for item in BUILD:
             
-            run_build(item, '/var/wok/')
-            run_build(item, '/var/wok/src/wok/plugins/kimchi/')
+            run_build(item, HOMEWOK)
+            run_build(item, HOMEKIMCHI)
             
-        run_build(COMMANDS_OS[pm]['make'], '/var/wok/')
-        run_build(COMMANDS_OS[pm]['make'], '/var/wok/src/wok/plugins/kimchi/')
+        run_build(COMMANDS_OS[pm]['make'], HOMEWOK)
+        run_build(COMMANDS_OS[pm]['make'], HOMEKIMCHI)
                 
         wok_package    = 'wok-'    + wok_version + '.' + distro_name[0] + '.noarch' + COMMANDS_OS[pm]['pk']
         kimchi_package = 'kimchi-' + kimchi_version + '.noarch' + COMMANDS_OS[pm]['pk']
 
-        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/' + wok_package)
-        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/src/wok/plugins/kimchi/' + kimchi_package)
+        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, HOMEWOK + wok_package)
+        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, HOMEKIMCHI + kimchi_package)
 
     print("All Good, check JFROG")
     
