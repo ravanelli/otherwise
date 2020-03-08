@@ -4,7 +4,8 @@ import shutil
 import sys
 import subprocess
 from subprocess import check_call, check_output, CalledProcessError
-#from wok.plugins.kimchi.config import  get_kimchi_version
+from wok.plugins.kimchi.config import  get_kimchi_version
+from wok.config import get_version
 
 REPOS_LIST     = ('production', 'staging')
 DISTROS_LIST   = ('centos/8', 'fedora/31', 'ubuntu/19.10', 'debian/10', 'opensuse/15.1', 'all')
@@ -164,9 +165,8 @@ def install_dependencies(distro, pm):
 def main():
    
     repo, distros, user, password  = usage()
-    #version = get_kimchi_version()
-    version =  "3.0.0"
-    release = "4.gitf3fbc1ea"
+    kimchi_version = get_kimchi_version()
+    wok_version = get_version()
 
     for distro in distros:
         distro_name = distro.split("/")
@@ -183,11 +183,11 @@ def main():
             
         execute_cmd([COMMANDS_OS[pm]['update']], 'Updating system')
         install_dependencies(distro_name[0], pm)
-        '''
+    
         execute_cmd(PACKAGES['wok'], 'Installing Wok')
         execute_cmd(PACKAGES['kimchi'], 'Installing Kimchi')
         execute_cmd([COMMANDS_OS[pm]['pip']],'Installing Pip packages') 
-        ''' 
+        
         for item in BUILD:
             
             run_build(item, '/var/wok/')
@@ -195,11 +195,11 @@ def main():
             
         run_build(COMMANDS_OS[pm]['make'], '/var/wok/')
         run_build(COMMANDS_OS[pm]['make'], '/var/wok/src/wok/plugins/kimchi/')
-        
-        wok_package    = 'wok-'    + version + '.' + release + '.' + distro_name[0] + '.noarch' + COMMANDS_OS[pm]['pk']
-        kimchi_package = 'kimchi-' + version + '-' + release + '.noarch' + COMMANDS_OS[pm]['pk']
-    
-        #curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/' + wok_package)
+                
+        wok_package    = 'wok-'    + wok_version + '.' + distro_name[0] + '.noarch' + COMMANDS_OS[pm]['pk']
+        kimchi_package = 'kimchi-' + kimchi_version + '.noarch' + COMMANDS_OS[pm]['pk']
+
+        curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/' + wok_package)
         curl_cmd(repo, distro_name[0], distro, wok_package, user, password, '/var/wok/src/wok/plugins/kimchi/' + kimchi_package)
 
     print("All Good, check JFROG")
